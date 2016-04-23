@@ -1,1 +1,1 @@
-include ':app', ':com.example.android.sunshine'
+include ':app', ':wear'

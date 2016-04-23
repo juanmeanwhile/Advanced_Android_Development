@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package com.meanwhile.sunshinewear;
+package com.example.android.sunshine.app;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -29,15 +30,16 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.preference.PreferenceManager;
+import android.support.v4.content.LocalBroadcastManager;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
 import android.text.format.Time;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
 import java.lang.ref.WeakReference;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
@@ -59,6 +61,8 @@ public class MyWatchFace extends CanvasWatchFaceService {
      */
     private static final int MSG_UPDATE_TIME = 0;
     private static final String DATE_PATTERN = "EEE, MMM-dd-yyyy";
+    private static final String TAG = "MyWatchFace";
+
 
     @Override
     public Engine onCreateEngine() {
@@ -100,13 +104,19 @@ public class MyWatchFace extends CanvasWatchFaceService {
                 mTime.setToNow();
             }
         };
+
+        final BroadcastReceiver mWeatherReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                Log.d(TAG, "Local broadcast received!");
+                mTemperatureMax = intent.getFloatExtra(WeatherUpdateService.PREF_MAX_TEMP, 0);
+                invalidate();
+            }
+        };
+
         float mXOffset;
         float mYOffset;
 
-        private int mTemperatureMax;
-        private int mTemperatureMin;
-        private int mCurrentWeather;
-        private Date mCurrentDate;
 
         /**
          * Whether the display supports fewer bits for each color in ambient mode. When true, we
@@ -114,9 +124,36 @@ public class MyWatchFace extends CanvasWatchFaceService {
          */
         boolean mLowBitAmbient;
 
+        private float mTemperatureMax;
+        private float mTemperatureMin;
+        private int mCurrentWeather;
+        private SharedPreferences.OnSharedPreferenceChangeListener mPrefListener;
+
         @Override
         public void onCreate(SurfaceHolder holder) {
             super.onCreate(holder);
+
+
+
+            mPrefListener = new
+                    SharedPreferences.OnSharedPreferenceChangeListener() {
+                        @Override
+                        public void onSharedPreferenceChanged(SharedPreferences sharedPreferences,
+                                                              String key) {
+                            Log.d(TAG, "preferences updated");
+                            if (key.equals(WeatherUpdateService.PREF_MAX_TEMP)) {
+                                mTemperatureMax = sharedPreferences.getFloat(WeatherUpdateService.PREF_MAX_TEMP, 0);
+                            } else  if (key.equals(WeatherUpdateService.PREF_MIN_TEMP)) {
+                                mTemperatureMin = sharedPreferences.getFloat(WeatherUpdateService.PREF_MIN_TEMP, 0);
+                            } else  if (key.equals(WeatherUpdateService.PREF_WEATHER_ID)) {
+                                mCurrentWeather = sharedPreferences.getInt(WeatherUpdateService.PREF_WEATHER_ID, 0);
+                            }
+
+                            invalidate();
+                        }
+                    };
+
+            PreferenceManager.getDefaultSharedPreferences(getBaseContext()).registerOnSharedPreferenceChangeListener(mPrefListener);
 
             setWatchFaceStyle(new WatchFaceStyle.Builder(MyWatchFace.this).setCardPeekMode(WatchFaceStyle.PEEK_MODE_VARIABLE).setBackgroundVisibility(WatchFaceStyle.BACKGROUND_VISIBILITY_INTERRUPTIVE).setShowSystemUiTime(false).build());
             Resources resources = MyWatchFace.this.getResources();
@@ -172,6 +209,11 @@ public class MyWatchFace extends CanvasWatchFaceService {
             mRegisteredTimeZoneReceiver = true;
             IntentFilter filter = new IntentFilter(Intent.ACTION_TIMEZONE_CHANGED);
             MyWatchFace.this.registerReceiver(mTimeZoneReceiver, filter);
+
+            LocalBroadcastManager.getInstance(MyWatchFace.this).registerReceiver(
+                    mWeatherReceiver, new IntentFilter("custom-event-name"));
+
+
         }
 
         private void unregisterReceiver() {
@@ -207,6 +249,7 @@ public class MyWatchFace extends CanvasWatchFaceService {
         public void onTimeTick() {
             super.onTimeTick();
             invalidate();
+            Log.d(TAG, "onTimeClick()");
         }
 
         @Override
@@ -240,7 +283,10 @@ public class MyWatchFace extends CanvasWatchFaceService {
             canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
 
             String date = mTime.month + "-" + mTime.monthDay + "-" + mTime.year;
-            canvas.drawText(date, mXOffset, mYOffset + 100, mTextPaint );
+            canvas.drawText(date, mXOffset, mYOffset + 150, mTextPaint );
+
+            canvas.drawText(mTemperatureMax + "º", mXOffset, mYOffset + 100, mTextPaint);
+
 
         }
 
