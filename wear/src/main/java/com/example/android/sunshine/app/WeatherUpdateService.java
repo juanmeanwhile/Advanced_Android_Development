@@ -45,12 +45,6 @@ public class WeatherUpdateService extends WearableListenerService {
                 intent.putExtra(PREF_WEATHER_ID, weatherId);
                 LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
 
-
-                SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(this).edit();
-                editor.putFloat(PREF_MAX_TEMP,  max);
-                editor.putFloat(PREF_MIN_TEMP, min);
-                editor.putInt(PREF_WEATHER_ID, weatherId);
-                editor.commit();
             }
         }
     }

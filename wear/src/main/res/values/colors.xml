@@ -2,4 +2,5 @@
 <resources>
     <color name="background">#1E8FFF</color>
     <color name="digital_text">#ffffff</color>
+    <color name="day_text">#89D1F9</color>
 </resources>

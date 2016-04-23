@@ -20,8 +20,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -30,12 +31,12 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-import android.preference.PreferenceManager;
 import android.support.v4.content.LocalBroadcastManager;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
 import android.text.format.Time;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
@@ -60,7 +61,6 @@ public class MyWatchFace extends CanvasWatchFaceService {
      * Handler message id for updating the time periodically in interactive mode.
      */
     private static final int MSG_UPDATE_TIME = 0;
-    private static final String DATE_PATTERN = "EEE, MMM-dd-yyyy";
     private static final String TAG = "MyWatchFace";
 
 
@@ -93,7 +93,12 @@ public class MyWatchFace extends CanvasWatchFaceService {
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
         Paint mBackgroundPaint;
-        Paint mTextPaint;
+        Paint mTextHourPaint;
+        Paint mTextDayPaint;
+        Paint mAmbientDayPaint;
+        Paint mTextMaxPaint;
+        Paint mTextMinPaint;
+        Paint mBitmapPaint;
         boolean mAmbient;
         Time mTime;
 
@@ -110,6 +115,10 @@ public class MyWatchFace extends CanvasWatchFaceService {
             public void onReceive(Context context, Intent intent) {
                 Log.d(TAG, "Local broadcast received!");
                 mTemperatureMax = intent.getFloatExtra(WeatherUpdateService.PREF_MAX_TEMP, 0);
+                mTemperatureMin = intent.getFloatExtra(WeatherUpdateService.PREF_MIN_TEMP, 0);
+                int weatherId = intent.getIntExtra(WeatherUpdateService.PREF_WEATHER_ID, 0);
+                mWeatherBitmap = BitmapFactory.decodeResource(getResources(), Utility.getArtResourceForWeatherCondition(weatherId));
+
                 invalidate();
             }
         };
@@ -126,47 +135,66 @@ public class MyWatchFace extends CanvasWatchFaceService {
 
         private float mTemperatureMax;
         private float mTemperatureMin;
-        private int mCurrentWeather;
-        private SharedPreferences.OnSharedPreferenceChangeListener mPrefListener;
+        private Rect mHourBounds;
+        private Rect mDayBounds;
+        private Rect mMaxBounds;
+        private Rect mMinBounds;
+
+        private Bitmap mWeatherBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.art_clear);
 
         @Override
         public void onCreate(SurfaceHolder holder) {
             super.onCreate(holder);
 
-
-
-            mPrefListener = new
-                    SharedPreferences.OnSharedPreferenceChangeListener() {
-                        @Override
-                        public void onSharedPreferenceChanged(SharedPreferences sharedPreferences,
-                                                              String key) {
-                            Log.d(TAG, "preferences updated");
-                            if (key.equals(WeatherUpdateService.PREF_MAX_TEMP)) {
-                                mTemperatureMax = sharedPreferences.getFloat(WeatherUpdateService.PREF_MAX_TEMP, 0);
-                            } else  if (key.equals(WeatherUpdateService.PREF_MIN_TEMP)) {
-                                mTemperatureMin = sharedPreferences.getFloat(WeatherUpdateService.PREF_MIN_TEMP, 0);
-                            } else  if (key.equals(WeatherUpdateService.PREF_WEATHER_ID)) {
-                                mCurrentWeather = sharedPreferences.getInt(WeatherUpdateService.PREF_WEATHER_ID, 0);
-                            }
-
-                            invalidate();
-                        }
-                    };
-
-            PreferenceManager.getDefaultSharedPreferences(getBaseContext()).registerOnSharedPreferenceChangeListener(mPrefListener);
-
-            setWatchFaceStyle(new WatchFaceStyle.Builder(MyWatchFace.this).setCardPeekMode(WatchFaceStyle.PEEK_MODE_VARIABLE).setBackgroundVisibility(WatchFaceStyle.BACKGROUND_VISIBILITY_INTERRUPTIVE).setShowSystemUiTime(false).build());
+            setWatchFaceStyle(new WatchFaceStyle.Builder(MyWatchFace.this)
+                    .setCardPeekMode(WatchFaceStyle.PEEK_MODE_VARIABLE)
+                    .setBackgroundVisibility(WatchFaceStyle.BACKGROUND_VISIBILITY_INTERRUPTIVE)
+                    .setShowSystemUiTime(false)
+                    .setStatusBarGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL)
+                    .build());
             Resources resources = MyWatchFace.this.getResources();
             mYOffset = resources.getDimension(R.dimen.digital_y_offset);
 
             mBackgroundPaint = new Paint();
             mBackgroundPaint.setColor(resources.getColor(R.color.background));
 
-            mTextPaint = new Paint();
-            mTextPaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mTextHourPaint = new Paint();
+            mTextHourPaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mTextHourPaint.setTextAlign(Paint.Align.CENTER);
+            mTextHourPaint.setTextSize(getResources().getDimension(R.dimen.hour_text));
+            mTextHourPaint.setTypeface(Typeface.DEFAULT_BOLD);
+            mHourBounds = new Rect();
+
+            mTextDayPaint = new Paint();
+            mTextDayPaint = createTextPaint(resources.getColor(R.color.day_text));
+            mTextDayPaint.setTextAlign(Paint.Align.CENTER);
+            mTextDayPaint.setTextSize(getResources().getDimension(R.dimen.day_text));
+            mTextDayPaint.setTypeface(Typeface.DEFAULT);
+            mDayBounds = new Rect();
+
+            mAmbientDayPaint = new Paint();
+            mAmbientDayPaint = createTextPaint(Color.WHITE);
+            mAmbientDayPaint.setTextAlign(Paint.Align.CENTER);
+            mAmbientDayPaint.setTextSize(getResources().getDimension(R.dimen.day_text));
+            mAmbientDayPaint.setTypeface(Typeface.DEFAULT);
+
+            mTextMaxPaint = new Paint();
+            mTextMaxPaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mTextMaxPaint.setTextAlign(Paint.Align.CENTER);
+            mTextMaxPaint.setTextSize(getResources().getDimension(R.dimen.temp_text));
+            mTextMaxPaint.setTypeface(Typeface.DEFAULT_BOLD);
+            mMaxBounds = new Rect();
+
+            mTextMinPaint = new Paint();
+            mTextMinPaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mTextMinPaint.setTextAlign(Paint.Align.CENTER);
+            mTextMinPaint.setTextSize(getResources().getDimension(R.dimen.temp_text));
+            mTextMinPaint.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+            mMinBounds = new Rect();
+
+            mBitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
             mTime = new Time();
-
         }
 
         @Override
@@ -232,11 +260,6 @@ public class MyWatchFace extends CanvasWatchFaceService {
             Resources resources = MyWatchFace.this.getResources();
             boolean isRound = insets.isRound();
             mXOffset = resources.getDimension(isRound ? R.dimen.digital_x_offset_round : R.dimen.digital_x_offset);
-            float textSize = resources.getDimension(isRound ? R.dimen.digital_text_size_round : R.dimen.digital_text_size);
-
-
-
-            mTextPaint.setTextSize(textSize);
         }
 
         @Override
@@ -258,7 +281,7 @@ public class MyWatchFace extends CanvasWatchFaceService {
             if (mAmbient != inAmbientMode) {
                 mAmbient = inAmbientMode;
                 if (mLowBitAmbient) {
-                    mTextPaint.setAntiAlias(!inAmbientMode);
+                    mTextHourPaint.setAntiAlias(!inAmbientMode);
                 }
                 invalidate();
             }
@@ -277,15 +300,28 @@ public class MyWatchFace extends CanvasWatchFaceService {
                 canvas.drawRect(0, 0, bounds.width(), bounds.height(), mBackgroundPaint);
             }
 
+
             // Draw H:MM in ambient mode or H:MM:SS in interactive mode.
             mTime.setToNow();
-            String text = mAmbient ? String.format("%d:%02d", mTime.hour, mTime.minute) : String.format("%d:%02d:%02d", mTime.hour, mTime.minute, mTime.second);
-            canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
+            String hour = mAmbient ? String.format("%d:%02d", mTime.hour, mTime.minute) : String.format("%d:%02d:%02d", mTime.hour, mTime.minute, mTime.second);
+            mTextHourPaint.getTextBounds(hour, 0, hour.length(), mHourBounds);
+            canvas.drawText(hour, bounds.centerX(), bounds.centerY() /2, mTextHourPaint);
 
             String date = mTime.month + "-" + mTime.monthDay + "-" + mTime.year;
-            canvas.drawText(date, mXOffset, mYOffset + 150, mTextPaint );
+            mTextDayPaint.getTextBounds(date, 0, date.length(), mDayBounds);
+            canvas.drawText(date, bounds.centerX() , bounds.centerY() /2 +  mHourBounds.height() , mAmbient? mAmbientDayPaint: mTextDayPaint);
 
-            canvas.drawText(mTemperatureMax + "º", mXOffset, mYOffset + 100, mTextPaint);
+            if (! mAmbient) {
+                canvas.drawBitmap(mWeatherBitmap, bounds.centerX() - mWeatherBitmap.getWidth() / 2, bounds.centerY() - mWeatherBitmap.getHeight() / 3, mBitmapPaint);
+            }
+            float y = bounds.height()*2/3;
+            String max = (int)mTemperatureMax + "º";
+            mTextMaxPaint.getTextBounds(max, 0 , max.length(), mMaxBounds);
+            canvas.drawText(max, bounds.centerX() - mMaxBounds.width()/2 - mWeatherBitmap.getWidth()/2 , y - mMaxBounds.height(), mTextMaxPaint);
+
+            String min = (int)mTemperatureMin + "º";
+            mTextMinPaint.getTextBounds(min, 0 , min.length(), mMinBounds);
+            canvas.drawText(min, bounds.centerX() + mMinBounds.width()/2 + mWeatherBitmap.getWidth()/2 , y - mMinBounds.height(), mTextMinPaint);
 
 
         }
